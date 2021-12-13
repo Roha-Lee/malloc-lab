@@ -78,10 +78,14 @@ team_t team = {
 
 #define POLICY EXTERNAL
 
+#define GET_PRED_BLKP(bp)  ((char *)(GET((char *)(bp))))
+#define GET_SUCC_BLKP(bp)  ((char *)(GET((char *)(bp) + WSIZE)))
+#define PUT_PRED_BLKP(bp, val)  (*(unsigned int *)(bp) = (val))
+#define PUT_SUCC_BLKP(bp, val)  (*(unsigned int *)((char *)(bp) + WSIZE) = (val))
+
 /* private variables */
 
 static char * last_bp;  
-static char * free_tailp;
 static char * free_headp;
 
 /* function prototypes */
@@ -91,6 +95,8 @@ static void *find_fit_first(size_t asize);
 static void *find_fit_next(size_t asize);
 static void *find_fit_best(size_t asize);
 static void place(void *bp, size_t asize);
+static void free_list_appendleft(void* bp);
+static void free_list_remove(void* bp);
 
 /* 
  * mm_init - initialize the malloc package.
@@ -127,11 +133,10 @@ int mm_init(void)
     if(extend_heap(CHUNKSIZE>>WSHIFT) == NULL)
         return -1;
     
-    free_headp = last_bp;   /* assign free_list's enterance. */ 
-    free_tailp = NEXT_BLKP(last_bp);   /* assign free_list's enterance. */ 
+    free_headp = NEXT_BLKP(last_bp);   /* assign free_list head */  
     
-    PUT(free_tailp, 0);
-    PUT(free_tailp + WSIZE, 0);
+    PUT_PRED_BLKP(free_headp, NULL);
+    PUT_SUCC_BLKP(free_headp, NULL);
     
     return 0;
 }
@@ -182,7 +187,9 @@ void *mm_malloc(size_t size)
     }
     
     /* Search the free list for a fit */
-    if((bp = find_fit_best(newsize)) != NULL){
+    if((bp = find_fit_first(newsize)) != NULL){
+        // remove from free list 
+        free_list_remove(bp);
         place(bp, newsize);
         // last_bp = NEXT_BLKP(bp);
         // last_bp = bp;
@@ -216,10 +223,7 @@ void mm_free(void *ptr)
     PUT(HDRP(ptr), PACK(size, 0));
     PUT(FTRP(ptr), PACK(size, 0));
     coalesce(ptr);
-    
-    PUT(ptr, free_tailp); /* pred */
-    PUT(free_tailp + WSIZE, ptr); /* succ */
-    free_tailp = ptr;
+    free_list_appendleft(ptr);
 }
 #endif
 /*
@@ -373,6 +377,7 @@ static void *coalesce(void * bp)
 }
 #endif
 
+#if POLICY == INTERNAL
 static void *find_fit_first(size_t asize)
 {
     void * bp = mem_heap_lo() + (WSIZE<<1);
@@ -390,7 +395,19 @@ static void *find_fit_first(size_t asize)
     // }
     // return NULL;
 }
-
+#elif POLICY == EXTERNAL
+// TODO 
+static void *find_fit_first(size_t asize)
+{
+    void * bp = mem_heap_lo() + (WSIZE<<1);
+    for(bp = NEXT_BLKP(bp); GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
+        if(!GET_ALLOC(HDRP(bp)) && GET_SIZE(HDRP(bp)) >= asize){
+            return bp;
+        }
+    }
+    return NULL;
+}
+#endif
 
 static void *find_fit_next(size_t asize)
 {
@@ -431,7 +448,7 @@ static void *find_fit_best(size_t asize)
     return best_bp;    
 }
 
-
+#if POLICY == INTERNAL
 static void place(void *bp, size_t asize)
 {
     size_t block_size = GET_SIZE(HDRP(bp));
@@ -443,16 +460,50 @@ static void place(void *bp, size_t asize)
         PUT(HDRP(NEXT_BLKP(bp)), PACK(block_size-asize, 0));
         PUT(FTRP(NEXT_BLKP(bp)), PACK(block_size-asize, 0));
     }
+    /* case: block is not splitted */
+    else{
+        PUT(HDRP(bp), PACK(block_size, 1));
+        PUT(FTRP(bp), PACK(block_size, 1));
+    }
+}
+#elif POLICY == EXTERNAL
+static void place(void *bp, size_t asize)
+{
+    size_t block_size = GET_SIZE(HDRP(bp));
+    
+    /* case: block should be splitted */
+    if(block_size - asize >= 2*DSIZE){
+        PUT(HDRP(bp), PACK(asize, 1));
+        PUT(FTRP(bp), PACK(asize, 1));
+        PUT(HDRP(NEXT_BLKP(bp)), PACK(block_size-asize, 0));
+        PUT(FTRP(NEXT_BLKP(bp)), PACK(block_size-asize, 0));
+    }
+    /* case: block is not splitted */
     else{
         PUT(HDRP(bp), PACK(block_size, 1));
         PUT(FTRP(bp), PACK(block_size, 1));
     }
 }
 
+#endif
 
 
 
+static void free_list_appendleft(void* bp){
+    PUT_PRED_BLKP(free_headp, bp);
+    PUT_PRED_BLKP(bp, NULL);
+    PUT_SUCC_BLKP(bp, free_headp);   
+    free_headp = bp; 
+}
 
 
-
+static void free_list_remove(void* bp){
+    PUT_PRED_BLKP(GET_SUCC_BLKP(bp), GET_PRED_BLKP(bp));
+    if(free_headp == bp){
+        free_headp = GET_SUCC_BLKP(bp);
+    }
+    else{
+        PUT_SUCC_BLKP(GET_PRED_BLKP(bp), GET_SUCC_BLKP(bp));
+    }
+}
 
