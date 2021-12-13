@@ -166,7 +166,7 @@ void *mm_malloc(size_t size)
     place(bp, newsize);
     // last_bp = NEXT_BLKP(bp);
     // last_bp = bp;
-    return bp;
+    return bp; 
 }
 #elif POLICY == EXTERNAL
 // TODO
