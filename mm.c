@@ -80,8 +80,8 @@ team_t team = {
 
 #define GET_PRED_BLKP(bp)  ((char *)(GET((char *)(bp))))
 #define GET_SUCC_BLKP(bp)  ((char *)(GET((char *)(bp) + WSIZE)))
-#define PUT_PRED_BLKP(bp, val)  (*(unsigned int *)(bp) = (val))
-#define PUT_SUCC_BLKP(bp, val)  (*(unsigned int *)((char *)(bp) + WSIZE) = (val))
+#define PUT_PRED_BLKP(bp, val)  (*(unsigned int *)(bp) = (unsigned int)(val))
+#define PUT_SUCC_BLKP(bp, val)  (*(unsigned int *)((char *)(bp) + WSIZE) = (unsigned int)(val))
 
 /* private variables */
 
@@ -124,16 +124,17 @@ int mm_init(void)
     char * heap_listp;
     if((heap_listp = (char*)mem_sbrk(WSIZE<<2)) == (void *)-1)
         return -1;
+    
     PUT(heap_listp, 0);     /* Alignment padding */
     PUT(heap_listp + WSIZE, PACK(DSIZE, 1));    /* Prologue Header */ 
     PUT(heap_listp + 2*WSIZE, PACK(DSIZE, 1));  /* Prologue Footer */ 
     PUT(heap_listp + 3*WSIZE, PACK(0, 1));  /* Epilogue Header */ 
+    
     last_bp = heap_listp + (WSIZE<<1);
+    free_headp = NEXT_BLKP(last_bp);   /* assign free_list head */  
     
     if(extend_heap(CHUNKSIZE>>WSHIFT) == NULL)
         return -1;
-    
-    free_headp = NEXT_BLKP(last_bp);   /* assign free_list head */  
     
     PUT_PRED_BLKP(free_headp, NULL);
     PUT_SUCC_BLKP(free_headp, NULL);
@@ -185,20 +186,24 @@ void *mm_malloc(size_t size)
     if(!size){
         return NULL;
     }
-    
+    printf("I am alive! \n");
     /* Search the free list for a fit */
     if((bp = find_fit_first(newsize)) != NULL){
+        printf("[after]first fit - I am alive! \n");
         // remove from free list 
         free_list_remove(bp);
+        printf("[after]free_list_remove - I am alive! \n");
         place(bp, newsize);
+        printf("[after]place - I am alive! \n");
         // last_bp = NEXT_BLKP(bp);
         // last_bp = bp;
         return bp;
     }
-
+    printf("first fit - I am alive! \n");
     /* No fit found. Get more memory and place the block */
     if((bp = extend_heap(extendsize>>WSHIFT)) == NULL)
         return NULL;
+    printf("extend_heap - I am alive! \n");
     place(bp, newsize);
     // last_bp = NEXT_BLKP(bp);
     // last_bp = bp;
@@ -223,7 +228,6 @@ void mm_free(void *ptr)
     PUT(HDRP(ptr), PACK(size, 0));
     PUT(FTRP(ptr), PACK(size, 0));
     coalesce(ptr);
-    free_list_appendleft(ptr);
 }
 #endif
 /*
@@ -337,7 +341,6 @@ static void *coalesce(void * bp)
     return bp;
 }
 #elif POLICY == EXTERNAL
-// TODO
 static void *coalesce(void * bp)
 {
     size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
@@ -346,6 +349,7 @@ static void *coalesce(void * bp)
 
     // case 1
     if (prev_alloc && next_alloc){
+        free_list_appendleft(bp);
         return bp;
     }
 
@@ -371,8 +375,7 @@ static void *coalesce(void * bp)
         PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
         bp = PREV_BLKP(bp);
     }
-
-    last_bp = PREV_BLKP(bp);
+    free_list_appendleft(bp);
     return bp;
 }
 #endif
@@ -396,11 +399,11 @@ static void *find_fit_first(size_t asize)
     // return NULL;
 }
 #elif POLICY == EXTERNAL
-// TODO 
 static void *find_fit_first(size_t asize)
 {
-    void * bp = mem_heap_lo() + (WSIZE<<1);
-    for(bp = NEXT_BLKP(bp); GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
+    void * bp;
+    for(bp = free_headp; GET_SUCC_BLKP(free_headp) != NULL ; bp = GET_SUCC_BLKP(bp)){
+        printf("%p/%p/%p\n", bp, GET_SUCC_BLKP(bp), GET_PRED_BLKP(bp));
         if(!GET_ALLOC(HDRP(bp)) && GET_SIZE(HDRP(bp)) >= asize){
             return bp;
         }
@@ -509,4 +512,3 @@ static void free_list_remove(void* bp){
         PUT_SUCC_BLKP(GET_PRED_BLKP(bp), GET_SUCC_BLKP(bp));
     }
 }
-
