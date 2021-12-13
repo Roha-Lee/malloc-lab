@@ -475,8 +475,11 @@ static void place(void *bp, size_t asize)
     if(block_size - asize >= 2*DSIZE){
         PUT(HDRP(bp), PACK(asize, 1));
         PUT(FTRP(bp), PACK(asize, 1));
-        PUT(HDRP(NEXT_BLKP(bp)), PACK(block_size-asize, 0));
-        PUT(FTRP(NEXT_BLKP(bp)), PACK(block_size-asize, 0));
+        // newly created free block -> should be added
+        char * next_blkp = NEXT_BLKP(bp);
+        PUT(HDRP(next_blkp), PACK(block_size-asize, 0));
+        PUT(FTRP(next_blkp), PACK(block_size-asize, 0));
+        free_list_appendleft(next_blkp);
     }
     /* case: block is not splitted */
     else{
