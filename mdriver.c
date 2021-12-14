@@ -287,8 +287,6 @@ int main(int argc, char **argv)
     /* Initialize the simulated memory system in memlib.c */
     mem_init(); 
 	
-	mm_init();//ddd
-	printf("NO PROBLEM!\n");//ddd
     /* Evaluate student's mm malloc package using the K-best scheme */
     for (i=0; i < num_tracefiles; i++) {
 	trace = read_trace(tracedir, tracefiles[i]);
@@ -595,10 +593,9 @@ static int eval_mm_valid(trace_t *trace, int tracenum, range_t **ranges)
 	malloc_error(tracenum, 0, "mm_init failed.");
 	return 0;
     }
-	printf("\nNOW TEST ROHA!o,o//\n");
+	
     /* Interpret each operation in the trace in order */
     for (i = 0;  i < trace->num_ops;  i++) {
-		printf("%d-th testcase!\n", i);
 	index = trace->ops[i].index;
 	size = trace->ops[i].size;
 
