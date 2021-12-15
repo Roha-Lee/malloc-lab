@@ -137,7 +137,7 @@ static void app_error(char *msg);
  **************/
 int main(int argc, char **argv)
 {
-    int i;
+	int i;
     char c;
     char **tracefiles = NULL;  /* null-terminated array of trace file names */
     int num_tracefiles = 0;    /* the number of traces in that array */

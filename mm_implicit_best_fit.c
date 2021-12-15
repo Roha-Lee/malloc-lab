@@ -71,14 +71,11 @@ team_t team = {
 /* user defined macro & constant */
 
 /* private variables */
-
-static char * last_bp;  
+static char * heap_listp;  
 
 /* function prototypes */
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
-static void *find_fit_first(size_t asize);
-static void *find_fit_next(size_t asize);
 static void *find_fit_best(size_t asize);
 static void place(void *bp, size_t asize);
 /* 
@@ -86,15 +83,13 @@ static void place(void *bp, size_t asize);
  */
 int mm_init(void)
 {
-    char * heap_listp;
     if((heap_listp = (char*)mem_sbrk(WSIZE<<2)) == (void *)-1)
         return -1;
     PUT(heap_listp, 0);     /* Alignment padding */
     PUT(heap_listp + WSIZE, PACK(DSIZE, 1));    /* Prologue Header */ 
     PUT(heap_listp + 2*WSIZE, PACK(DSIZE, 1));  /* Prologue Footer */ 
     PUT(heap_listp + 3*WSIZE, PACK(0, 1));  /* Epilogue Header */ 
-    last_bp = heap_listp + (WSIZE<<1);
-    // heap_listp += 2*WSIZE;
+    heap_listp += 2*WSIZE;
     
     if(extend_heap(CHUNKSIZE/WSIZE) == NULL)
         return -1;
@@ -241,62 +236,28 @@ static void *coalesce(void * bp)
         PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
         bp = PREV_BLKP(bp);
     }
-
-    last_bp = PREV_BLKP(bp);
     return bp;
-}
-
-
-static void *find_fit_first(size_t asize)
-{
-    void * bp = mem_heap_lo() + (WSIZE<<1);
-    for(bp = NEXT_BLKP(bp); GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
-        if(!GET_ALLOC(HDRP(bp)) && GET_SIZE(HDRP(bp)) >= asize){
-            return bp;
-        }
-    }
-    return NULL;
-}
-
-
-static void *find_fit_next(size_t asize)
-{
-    char *bp;
-
-    for (bp = NEXT_BLKP(last_bp); GET_SIZE(HDRP(bp)) != 0; bp = NEXT_BLKP(bp)) {
-        if (!GET_ALLOC(HDRP(bp)) && GET_SIZE(HDRP(bp)) >= asize) {
-            last_bp = bp;
-            return bp;
-        }
-    }
-    
-    // for better memory utils
-    bp = mem_heap_lo() + (WSIZE<<1);
-    for(bp = NEXT_BLKP(bp); bp < last_bp; bp=NEXT_BLKP(bp)){
-        if (!GET_ALLOC(HDRP(bp)) && GET_SIZE(HDRP(bp)) >= asize) {
-            last_bp = bp;
-            return bp;
-        }
-    }
-    return NULL;
 }
 
 
 static void *find_fit_best(size_t asize)
 {
-    size_t best_block_size;
+    size_t best_block_size = 1<<30;
+    size_t curr_size = 0;
     char * best_bp = NULL;
-    char *bp = mem_heap_lo() + (WSIZE<<1);
-    for(bp = NEXT_BLKP(last_bp); GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-        if (!GET_ALLOC(HDRP(bp)) && asize <= GET_SIZE(HDRP(bp))){
-            if(best_block_size > asize){
+    char *bp;
+    for(bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+        curr_size = GET_SIZE(HDRP(bp));
+        if (!GET_ALLOC(HDRP(bp)) && asize <= curr_size){
+            if(best_block_size > curr_size){
                 best_bp = bp;
-                best_block_size = asize;
+                best_block_size = curr_size;
             }
         }
     }
     return best_bp;    
 }
+
 
 static void place(void *bp, size_t asize)
 {
