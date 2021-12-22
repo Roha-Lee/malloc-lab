@@ -8,9 +8,9 @@
 #include "memlib.h"
 
 team_t team = {
-    "ateam",
-    "Harry Bovik",
-    "bovik@cs.cmu.edu",
+    "week06 team 1",
+    "Lee Jongho",
+    "rohagru@gmail.com",
     "",
     ""
 };
@@ -44,43 +44,61 @@ static void place(void *bp, size_t asize);
 static void add_block(void *bp, size_t size);
 static void remove_block(void *bp);
 
+
+/* 
+    mm_init: malloc 초기화 과정 
+    - segregated list 초기화
+    - 초기 힙 설정: 0 Padding, Prologue, Epilogue 설정
+    - CHUNKSIZE 바이트만큼 힙 확장
+*/
 int mm_init(void){
-    int group;
-    for(group = 0; group < GROUPSIZE; group ++){
-        group_free_listp[group] = NULL;
+    // segregated list 초기화
+    int group_idx;
+    for(group_idx = 0; group_idx < GROUPSIZE; group_idx ++){
+        group_free_listp[group_idx] = NULL;
     }
 
+    // 초기 힙 설정 
     char * heap_listp;
     if((heap_listp = mem_sbrk(WSIZE*4)) == (void *)-1)
         return -1;
 
-    PUT(heap_listp, 0);    
-    PUT(heap_listp + WSIZE,     PACK(DSIZE, 1)); 
-    PUT(heap_listp + 2*WSIZE,   PACK(DSIZE, 1));
-    PUT(heap_listp + 3*WSIZE,   PACK(0, 1));  
+    PUT(heap_listp,             0);                 // 0 padding
+    PUT(heap_listp + WSIZE,     PACK(DSIZE, 1));    // Prologue header 설정
+    PUT(heap_listp + 2*WSIZE,   PACK(DSIZE, 1));    // Prologue footer 설정
+    PUT(heap_listp + 3*WSIZE,   PACK(0, 1));        // Epilogue header 설정
     
-    heap_listp += 2*WSIZE;
+    heap_listp += 2*WSIZE;  // heap_listp가 Prologue header를 가리키게 함 
     
+    // CHUNKSIZE 바이트만큼 힙 확장
     if(extend_heap(CHUNKSIZE/WSIZE) == NULL)
         return -1;
     return 0;
 }
 
+
+/* 
+    extend_heap: words크기만큼 Heap을 확장 
+    - 입력으로 들어오는 words를 바이트 크기로 바꿔주고 mem_sbrk를 통해 힙 확장 
+    - 새로운 free block의 header, footer 설정 및 새로운 epilogue 설정
+    - 기존 free block과 인접해 있다면 합치기 
+        - coalesce 하는 과정에서 새로 생성된 블록을 free block list에 넣어줌
+*/ 
 static void *extend_heap(size_t words){
     char *bp;
     size_t size;
-
-    size = (words & 1) ? (words+1) * WSIZE : words * WSIZE; // 다른점? 
+    // words를 짝수로 맞추어 주고 WSIZE를 곱해서 바이트 단위로 변경 
+    size = (words & 1) ? (words+1) * WSIZE : words * WSIZE; 
     
+    // 변경한 사이즈를 이용하여 힙 확장 
     if((size_t)(bp = mem_sbrk(size)) == -1)
         return NULL;
     
     PUT(HDRP(bp), PACK(size, 0));           /* Free block header */
     PUT(FTRP(bp), PACK(size, 0));           /* Free block footer */
-    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));   /* New epilogue header */
+    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));   /* 새로운 Epilogue header */
     
-    add_block(bp, size);
-    // printf("Extend_heap! initial heap size : %d\n", size);
+    // 블록 크기 조정 
     return coalesce(bp);
 }
 
@@ -131,14 +149,6 @@ static void add_block(void *bp, size_t size){
             PREV_FREE(curr) = bp;
         }
     }
-    // printf("[add size:%d]GROUP: %d PREV: %p BP: %p, NEXT: %p\n", original_size, group_idx, PREV_FREE(bp), bp, NEXT_FREE(bp));
-    // curr = group_free_listp[group_idx];
-    // while(curr != NULL){
-    //     printf("size:%d(%p) -> ", GET_SIZE(HDRP(curr)), curr);
-    //     prev = curr;
-    //     curr = NEXT_FREE(curr);
-    // }
-    // printf("\n");
 }
 
 
@@ -185,12 +195,12 @@ static void *coalesce(void * bp)
 
     // case 1
     if (prev_alloc && next_alloc){
+        add_block(bp, size);
         return bp;
     }
     //case 2
     else if(prev_alloc && !next_alloc){
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
-        remove_block(bp);
         remove_block(NEXT_BLKP(bp));
         PUT(HDRP(bp), PACK(size, 0));
         PUT(FTRP(bp), PACK(size, 0));
@@ -199,7 +209,6 @@ static void *coalesce(void * bp)
     //case 3
     else if (!prev_alloc && next_alloc){
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
-        remove_block(bp);
         remove_block(PREV_BLKP(bp));
         PUT(FTRP(bp), PACK(size, 0));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
@@ -209,7 +218,6 @@ static void *coalesce(void * bp)
     //case 4
     else {
         size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp)));
-        remove_block(bp);
         remove_block(NEXT_BLKP(bp));
         remove_block(PREV_BLKP(bp));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
@@ -227,7 +235,6 @@ void mm_free(void *bp)
     size_t size = GET_SIZE(HDRP(bp));
     PUT(HDRP(bp), PACK(size, 0));
     PUT(FTRP(bp), PACK(size, 0));
-    add_block(bp, size);
     coalesce(bp);
 }
 
@@ -291,7 +298,6 @@ void *mm_malloc(size_t size)
     }
 
     if((bp = find_fit(newsize)) != NULL){
-        // printf("[find size:%d]PREV: %p BP: %p, NEXT: %p\n", GET_SIZE(HDRP(bp)), PREV_FREE(bp), bp, NEXT_FREE(bp));
         place(bp, newsize);
         return bp;
     }
@@ -334,12 +340,10 @@ static void *find_fit(size_t asize){
         size >>= 1;
         group_idx++;
     }
-    // printf("[in find]start point: %p, size: %d\n", curr, asize);
     for (;group_idx < GROUPSIZE; group_idx++){
         curr = group_free_listp[group_idx];
         while(curr != NULL && asize > GET_SIZE(HDRP(curr))){
             curr = NEXT_FREE(curr);
-        // printf("[find size:%d]GROUP: %d PREV: %p BP: %p, NEXT: %p\n", GET_SIZE(HDRP(curr)), group_idx, PREV_FREE(bp), bp, NEXT_FREE(bp));
         }
         if(curr){
             return curr;           
