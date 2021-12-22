@@ -8,9 +8,9 @@
 #include "memlib.h"
 
 team_t team = {
-    "ateam",
-    "Harry Bovik",
-    "bovik@cs.cmu.edu",
+    "week06 team 1",
+    "Lee Jongho",
+    "rohagru@gmail.com",
     "",
     ""
 };
@@ -44,48 +44,72 @@ static void place(void *bp, size_t asize);
 static void add_block(void *bp, size_t size);
 static void remove_block(void *bp);
 
+
+/* 
+    mm_init: malloc 초기화 과정 
+    - segregated list 초기화
+    - 초기 힙 설정: 0 Padding, Prologue, Epilogue 설정
+    - CHUNKSIZE 바이트만큼 힙 확장
+*/
 int mm_init(void){
-    int group;
-    for(group = 0; group < GROUPSIZE; group ++){
-        group_free_listp[group] = NULL;
+    // segregated list 초기화
+    int group_idx;
+    for(group_idx = 0; group_idx < GROUPSIZE; group_idx ++){
+        group_free_listp[group_idx] = NULL;
     }
 
+    // 초기 힙 설정 
     char * heap_listp;
     if((heap_listp = mem_sbrk(WSIZE*4)) == (void *)-1)
         return -1;
 
-    PUT(heap_listp, 0);    
-    PUT(heap_listp + WSIZE,     PACK(DSIZE, 1)); 
-    PUT(heap_listp + 2*WSIZE,   PACK(DSIZE, 1));
-    PUT(heap_listp + 3*WSIZE,   PACK(0, 1));  
+    PUT(heap_listp,             0);                 // 0 padding
+    PUT(heap_listp + WSIZE,     PACK(DSIZE, 1));    // Prologue header 설정
+    PUT(heap_listp + 2*WSIZE,   PACK(DSIZE, 1));    // Prologue footer 설정
+    PUT(heap_listp + 3*WSIZE,   PACK(0, 1));        // Epilogue header 설정
     
-    heap_listp += 2*WSIZE;
+    heap_listp += 2*WSIZE;  // heap_listp가 Prologue header를 가리키게 함 
     
+    // CHUNKSIZE 바이트만큼 힙 확장
     if(extend_heap(CHUNKSIZE/WSIZE) == NULL)
         return -1;
     return 0;
 }
 
+
+/* 
+    extend_heap: words크기만큼 Heap을 확장 
+    - 입력으로 들어오는 words를 바이트 크기로 바꿔주고 mem_sbrk를 통해 힙 확장 
+    - 새로운 free block의 header, footer 설정 및 새로운 epilogue 설정
+    - 기존 free block과 인접해 있다면 합치기 
+        - coalesce 하는 과정에서 새로 생성된 블록을 free block list에 넣어줌
+*/ 
 static void *extend_heap(size_t words){
     char *bp;
     size_t size;
-
-    size = (words & 1) ? (words+1) * WSIZE : words * WSIZE; // 다른점? 
+    // words를 짝수로 맞추어 주고 WSIZE를 곱해서 바이트 단위로 변경 
+    size = (words & 1) ? (words+1) * WSIZE : words * WSIZE; 
     
+    // 변경한 사이즈를 이용하여 힙 확장 
     if((size_t)(bp = mem_sbrk(size)) == -1)
         return NULL;
     
     PUT(HDRP(bp), PACK(size, 0));           /* Free block header */
     PUT(FTRP(bp), PACK(size, 0));           /* Free block footer */
-    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));   /* New epilogue header */
+    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));   /* 새로운 Epilogue header */
     
-    add_block(bp, size);
-    // printf("Extend_heap! initial heap size : %d\n", size);
+    // 블록 크기 조정 
     return coalesce(bp);
 }
 
-
+/* 
+    add_block: free block list에 새로운 블록을 추가 
+    - 원하는 크기의 그룹을 찾음
+    - 그룹의 맨 앞에서 부터 탐색하여 적절한 크기의 블록 얻음
+    - 각 경우별로 블록들 간의 포인터 변경 
+*/ 
 static void add_block(void *bp, size_t size){
+    // 원하는 크기의 그룹을 1이 될 때까지 bit shift연산을 하며 index를 증가시켜가며 찾음
     int group_idx = 0;
     int original_size = size;
     while((group_idx < GROUPSIZE - 1) && (size > 1)){
@@ -93,10 +117,12 @@ static void add_block(void *bp, size_t size){
         group_idx++;
     }
 
+    // 그룹 내에서 원하는 블록을 찾음 
     void *curr = group_free_listp[group_idx];
     void *prev = NULL;
-
-    while(curr != NULL && size > GET_SIZE(HDRP(curr))){
+    
+    // 직전 블록보다 크기가 클때를 찾음 (블록 크기 순으로 정렬을 유지하기 위해)
+    while(curr != NULL && original_size > GET_SIZE(HDRP(curr))){
         prev = curr;
         curr = NEXT_FREE(curr);
     }
@@ -131,18 +157,15 @@ static void add_block(void *bp, size_t size){
             PREV_FREE(curr) = bp;
         }
     }
-    // printf("[add size:%d]GROUP: %d PREV: %p BP: %p, NEXT: %p\n", original_size, group_idx, PREV_FREE(bp), bp, NEXT_FREE(bp));
-    // curr = group_free_listp[group_idx];
-    // while(curr != NULL){
-    //     printf("size:%d(%p) -> ", GET_SIZE(HDRP(curr)), curr);
-    //     prev = curr;
-    //     curr = NEXT_FREE(curr);
-    // }
-    // printf("\n");
 }
 
-
+/* 
+    remove_block: free list에서 블록을 제거 
+    - 원하는 크기의 그룹을 찾음
+    - 각 경우별로 제거
+*/ 
 static void remove_block(void *bp){
+    // 원하는 크기의 그룹을 찾음 
     int group_idx = 0;
     size_t size = GET_SIZE(HDRP(bp));
     
@@ -151,6 +174,7 @@ static void remove_block(void *bp){
         group_idx++;
     }
     
+    // 제거 
     if(NEXT_FREE(bp) == NULL){
         // case 1. 빼면 아무것도 안남는 경우 
         if(PREV_FREE(bp) == NULL){
@@ -173,10 +197,12 @@ static void remove_block(void *bp){
             NEXT_FREE(PREV_FREE(bp)) = NEXT_FREE(bp);
         }
     }
-    // printf("[rmv]group: %d PREV: %p BP: %p, NEXT: %p\n", group_idx, PREV_FREE(bp), bp, NEXT_FREE(bp));
 }
 
-
+/* 
+    coalesce: 새로운 free block이 생겼을때 앞 뒤 block을 확인하여 free인 경우 하나로 합침
+    - CS:APP의 책 기준으로 네 가지 경우에 대하여 합침
+*/ 
 static void *coalesce(void * bp)
 {
     size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
@@ -185,12 +211,12 @@ static void *coalesce(void * bp)
 
     // case 1
     if (prev_alloc && next_alloc){
+        add_block(bp, size);
         return bp;
     }
     //case 2
     else if(prev_alloc && !next_alloc){
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
-        remove_block(bp);
         remove_block(NEXT_BLKP(bp));
         PUT(HDRP(bp), PACK(size, 0));
         PUT(FTRP(bp), PACK(size, 0));
@@ -199,7 +225,6 @@ static void *coalesce(void * bp)
     //case 3
     else if (!prev_alloc && next_alloc){
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
-        remove_block(bp);
         remove_block(PREV_BLKP(bp));
         PUT(FTRP(bp), PACK(size, 0));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
@@ -209,7 +234,6 @@ static void *coalesce(void * bp)
     //case 4
     else {
         size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp)));
-        remove_block(bp);
         remove_block(NEXT_BLKP(bp));
         remove_block(PREV_BLKP(bp));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
@@ -217,42 +241,37 @@ static void *coalesce(void * bp)
         bp = PREV_BLKP(bp);
     }
     
-    add_block(bp, size);
+    // 합치고 난 새로운 블록을 free block list에 넣어줌 
+    add_block(bp, size);    
     return bp;
 }
 
 
+/* 
+    mm_free: allocated block을 free block으로 바꿔줌
+    - 블록 헤더 정보 변경 
+    - coalesce함수를 통하여 합침
+        - add block은 coalesce함수 내부에서 수행 
+*/ 
 void mm_free(void *bp)
 {
     size_t size = GET_SIZE(HDRP(bp));
     PUT(HDRP(bp), PACK(size, 0));
     PUT(FTRP(bp), PACK(size, 0));
-    add_block(bp, size);
     coalesce(bp);
 }
 
 
-// void *mm_realloc(void *ptr, size_t size)
-// {
-//     void *oldptr = ptr;
-//     void *newptr;
-//     size_t copySize;
-    
-//     newptr = mm_malloc(size);
-//     if (newptr == NULL)
-//         return NULL;
-//     // copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
-//     copySize = GET_SIZE(HDRP(oldptr));
-//     if (size < copySize)
-//         copySize = size;
-//     memcpy(newptr, oldptr, copySize);
-//     mm_free(oldptr);
-//     return newptr;
-// }
-
-
+/* 
+    mm_realloc: 블록의 크기를 size로 변경 
+    - size가 0인 경우는 free
+    - ptr가 NULL인 경우는 malloc
+    - 새로운 블록의 크기가 기존 블록보다 작다면 기존 블록 내에서 확장 가능
+    - 새로운 블록의 크기가 기존 블록보다 크다면 더 큰 블록을 찾아서 할당한 후 기존 내용을 큰 블록으로 복사 
+*/ 
 void *mm_realloc(void *ptr, size_t size)
 {
+    // size가 0인 경우는 free
     if(!size){
         mm_free(ptr);
         return ptr;
@@ -279,7 +298,9 @@ void *mm_realloc(void *ptr, size_t size)
 }
 
 
-
+/* 
+    mm_malloc: size크기 데이터를 넣을 수 있는 공간 할당
+*/ 
 void *mm_malloc(size_t size)
 {
     size_t newsize = ALIGN(size + DSIZE); 
@@ -291,7 +312,6 @@ void *mm_malloc(size_t size)
     }
 
     if((bp = find_fit(newsize)) != NULL){
-        // printf("[find size:%d]PREV: %p BP: %p, NEXT: %p\n", GET_SIZE(HDRP(bp)), PREV_FREE(bp), bp, NEXT_FREE(bp));
         place(bp, newsize);
         return bp;
     }
@@ -304,6 +324,9 @@ void *mm_malloc(size_t size)
 }
 
 
+/* 
+    place: free block에 필요한 공간 할당 및 경우에 따라 블록을 쪼개서 새로운 free block 생성
+*/ 
 static void place(void *bp, size_t asize)
 {
     size_t block_size = GET_SIZE(HDRP(bp));
@@ -326,6 +349,13 @@ static void place(void *bp, size_t asize)
 }
 
 
+/* 
+    find_fit: 필요한 크기의 free block을 free block list에서 찾음
+    - 원하는 크기의 그룹을 찾음
+    - 그룹 내에서 필요한 최소 크기의 블록을 찾음 
+    - 그룹 내에서 원하는 블록을 찾을 수 없다면 더 큰 그룹으로 이동하여 찾을 때 까지 탐색 
+    - 발견할 수 없다면 NULL 반환 
+*/ 
 static void *find_fit(size_t asize){
     int group_idx = 0;
     int size = asize;
@@ -334,12 +364,10 @@ static void *find_fit(size_t asize){
         size >>= 1;
         group_idx++;
     }
-    // printf("[in find]start point: %p, size: %d\n", curr, asize);
     for (;group_idx < GROUPSIZE; group_idx++){
         curr = group_free_listp[group_idx];
         while(curr != NULL && asize > GET_SIZE(HDRP(curr))){
             curr = NEXT_FREE(curr);
-        // printf("[find size:%d]GROUP: %d PREV: %p BP: %p, NEXT: %p\n", GET_SIZE(HDRP(curr)), group_idx, PREV_FREE(bp), bp, NEXT_FREE(bp));
         }
         if(curr){
             return curr;           

@@ -1,7 +1,15 @@
 # malloc lab
-- [과제 링크 바로가기](#CS:APP-Malloc-Lab)
-
-#####################################################################
+## TODO 
+### 구현
+- [ ] buddy system Reallocation 부분 구현 
+### 코드 정리
+- [ ] 주석 달기 
+	- [ ] (제출 코드) segregated code 주석 달기 
+	- [ ] implicit 주석 달기 
+	- [ ] explicit 주석 달기 
+	- [ ] buddy system 이해한 부분까지 주석 달기 
+### 문서화
+- [ ] README에 구현 과정 및 관련 이론 정리하기  
 # CS:APP Malloc Lab
 # Handout files for students
 #
